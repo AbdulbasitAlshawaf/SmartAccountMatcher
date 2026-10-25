@@ -57,7 +57,6 @@ class MainActivity : Activity() {
         }
 
         val scroll = ScrollView(this)
-
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -107,7 +106,6 @@ class MainActivity : Activity() {
         })
 
         content.addView(results)
-
         scroll.addView(content)
 
         root.addView(
@@ -118,31 +116,34 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun status(value: String) =
-        TextView(this).apply {
+    private fun status(value: String): TextView {
+        return TextView(this).apply {
             text = value
             textSize = 14f
             setTextColor(Color.rgb(75, 85, 99))
             setPadding(8, 8, 8, 16)
         }
+    }
 
     private fun button(
         label: String,
         action: () -> Unit
-    ) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 16f
+    ): Button {
+        return Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 16f
 
-        setOnClickListener {
-            action()
-        }
+            setOnClickListener {
+                action()
+            }
 
-        layoutParams = LinearLayout.LayoutParams(
-            -1,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            bottomMargin = 8
+            layoutParams = LinearLayout.LayoutParams(
+                -1,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 8
+            }
         }
     }
 
@@ -184,7 +185,6 @@ class MainActivity : Activity() {
             val extracted = contentResolver
                 .openInputStream(uri)
                 .use { input ->
-
                     requireNotNull(input) {
                         "تعذر فتح الملف"
                     }
@@ -303,27 +303,25 @@ class MainActivity : Activity() {
     }
 
     private fun normalizeDigits(text: String): String {
-        return text
-            .replace(Regex("[٠-٩]")) {
-                (it.value[0] - '٠').toString()
+        return buildString {
+            for (ch in text) {
+                when (ch) {
+                    in '٠'..'٩' -> append(ch - '٠')
+                    in '۰'..'۹' -> append(ch - '۰')
+                    else -> append(ch)
+                }
             }
-            .replace(Regex("[۰-۹]")) {
-                (it.value[0] - '۰').toString()
-            }
+        }
     }
 
-    
-private fun cleanHeader(text: String): String {
-    return normalizeDigits(text)
-        .lowercase(Locale.ROOT)
-        .replace("أ", "ا")
-        .replace("إ", "ا")
-        .replace("آ", "ا")
-        .replace("ى", "ي")
-        .filter { it.isLetterOrDigit() }
-}
-
-            .trim()
+    private fun cleanHeader(text: String): String {
+        return normalizeDigits(text)
+            .lowercase(Locale.ROOT)
+            .replace("أ", "ا")
+            .replace("إ", "ا")
+            .replace("آ", "ا")
+            .replace("ى", "ي")
+            .filter { it.isLetterOrDigit() }
     }
 
     private fun isDescriptionHeader(value: String): Boolean {
@@ -360,8 +358,14 @@ private fun cleanHeader(text: String): String {
             return line.split('|').map { it.trim() }
         }
 
+        if (line.contains('\t')) {
+            return line.split('\t')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        }
+
         return line.trim()
-            .split(Regex("""\t+| {2,}"""))
+            .split(Regex(" {2,}"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
     }
@@ -372,8 +376,9 @@ private fun cleanHeader(text: String): String {
             .replace("٫", ".")
             .replace("−", "-")
             .replace(" ", "")
-            .filter { it.isDigit() || it in ",().+-" }
-
+            .filter {
+                it.isDigit() || it in ",().+-"
+            }
 
         if (s.isBlank() || s == "-" || s == "." || s == ",") {
             return null
@@ -442,7 +447,6 @@ private fun cleanHeader(text: String): String {
 
         for (i in headerIndex + 1 until lines.size) {
             val line = lines[i].trim()
-
             if (line.isBlank()) continue
 
             val columns = splitColumns(line)
@@ -632,11 +636,8 @@ private fun cleanHeader(text: String): String {
         firstText = ""
         secondText = ""
 
-        firstStatus.text =
-            "لم يتم اختيار الكشف الأول"
-
-        secondStatus.text =
-            "لم يتم اختيار الكشف الثاني"
+        firstStatus.text = "لم يتم اختيار الكشف الأول"
+        secondStatus.text = "لم يتم اختيار الكشف الثاني"
 
         results.text =
             "اختر كشفين ثم اضغط مطابقة الحسابات."
