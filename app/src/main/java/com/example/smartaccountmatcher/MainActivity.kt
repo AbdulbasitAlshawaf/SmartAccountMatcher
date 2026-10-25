@@ -374,6 +374,7 @@ class MainActivity : Activity() {
             .replace(" ", "")
             .replace(Regex("""[^0-9,().+\-]"""), "")
 
+
         if (s.isBlank() || s == "-" || s == "." || s == ",") {
             return null
         }
