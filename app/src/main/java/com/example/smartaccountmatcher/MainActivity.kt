@@ -39,6 +39,7 @@ class MainActivity : Activity() {
 
     private fun buildScreen() {
         val root = LinearLayout(this).apply {
+            root.setBackgroundResource(R.drawable.background)
             orientation = LinearLayout.VERTICAL
             setPadding(24, 28, 24, 24)
             setBackgroundColor(Color.rgb(247, 249, 252))
