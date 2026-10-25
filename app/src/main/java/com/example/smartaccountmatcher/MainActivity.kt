@@ -320,9 +320,11 @@ class MainActivity : Activity() {
             .replace("آ", "ا")
             .replace("ى", "ي")
             .replace(
-                Regex("""[\s\p{Punct}،؛:：()\[\]{}]+"""),
-                ""
-            )
+                .replace(
+    Regex("[^a-zA-Z0-9ء-ي]"),
+    ""
+)
+
             .trim()
     }
 
