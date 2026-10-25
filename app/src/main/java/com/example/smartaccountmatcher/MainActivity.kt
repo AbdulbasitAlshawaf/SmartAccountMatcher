@@ -523,7 +523,7 @@ class MainActivity : Activity() {
 
                 append("الكشف الثاني: ")
                     .append(second.message)
-                    .append('\n\n')
+                    .append("\n\n")
 
                 append(
                     "قد لا تكون أعمدة PDF مفصولة بوضوح. " +
