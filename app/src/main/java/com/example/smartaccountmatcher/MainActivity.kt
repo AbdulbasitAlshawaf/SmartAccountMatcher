@@ -324,34 +324,51 @@ class MainActivity : Activity() {
             .filter { it.isLetterOrDigit() }
     }
 
-    private fun isDescriptionHeader(value: String): Boolean {
-        val h = cleanHeader(value)
+    
+private fun isDescriptionHeader(value: String): Boolean {
+    val h = cleanHeader(value)
 
-        return h in setOf(
-            "البيان",
-            "بيان",
-            "وصفالعملية",
-            "وصفالحركة",
-            "تفاصيلالعملية",
-            "تفاصيلالحركة",
-            "التفاصيل",
-            "الشرح",
-            "البيانات"
-        )
-    }
+    return h in setOf(
+        "البيان",
+        "بيان",
+        "وصفالعملية",
+        "وصفالحركة",
+        "تفاصيلالعملية",
+        "تفاصيلالحركة",
+        "التفاصيل",
+        "الشرح",
+        "البيانات",
+        "تفاصيل",
+        "تفصيل"
+    )
+}
 
     private fun isAmountHeader(value: String): Boolean {
-        val h = cleanHeader(value)
+    val h = cleanHeader(value)
 
-        return h in setOf(
-            "المبلغ",
-            "قيمة",
-            "القيمة",
-            "مبلغ",
-            "قيمةالعملية",
-            "مبلغالعملية"
-        )
-    }
+    return h in setOf(
+        "المبلغ",
+        "قيمة",
+        "القيمة",
+        "مبلغ",
+        "قيمةالعملية",
+        "مبلغالعملية",
+        "مدينعليه",
+        "مدين",
+        "دائنله",
+        "دائن"
+    )
+}
+
+private fun isDebitHeader(value: String): Boolean {
+    val h = cleanHeader(value)
+    return h == "مدينعليه" || h == "مدين"
+}
+
+private fun isCreditHeader(value: String): Boolean {
+    val h = cleanHeader(value)
+    return h == "دائنله" || h == "دائن"
+}
 
     private fun splitColumns(line: String): List<String> {
         if (line.contains('|')) {
@@ -410,84 +427,123 @@ class MainActivity : Activity() {
         return if (negativeParentheses) -abs(value) else value
     }
 
-    private fun parseStatement(text: String): ParsedStatement {
-        val lines = text.lines()
+    
+private fun parseStatement(text: String): ParsedStatement {
+    val lines = text.lines()
 
-        var headerIndex = -1
-        var descriptionIndex = -1
-        var amountIndex = -1
+    var headerIndex = -1
+    var descriptionIndex = -1
+    var amountIndex = -1
+    var debitIndex = -1
+    var creditIndex = -1
 
-        for (i in lines.indices) {
-            val columns = splitColumns(lines[i])
+    for (i in lines.indices) {
+        val columns = splitColumns(lines[i])
 
-            val desc = columns.indexOfFirst {
-                isDescriptionHeader(it)
-            }
-
-            val amount = columns.indexOfFirst {
-                isAmountHeader(it)
-            }
-
-            if (desc >= 0 && amount >= 0 && desc != amount) {
-                headerIndex = i
-                descriptionIndex = desc
-                amountIndex = amount
-                break
-            }
+        val desc = columns.indexOfFirst {
+            isDescriptionHeader(it)
         }
 
-        if (headerIndex < 0) {
-            return ParsedStatement(
-                emptyList(),
-                "لم يتم العثور على عناوين البيان والمبلغ في صف واحد."
-            )
+        val debit = columns.indexOfFirst {
+            isDebitHeader(it)
         }
 
-        val transactions = mutableListOf<Transaction>()
-
-        for (i in headerIndex + 1 until lines.size) {
-            val line = lines[i].trim()
-            if (line.isBlank()) continue
-
-            val columns = splitColumns(line)
-
-            if (
-                columns.size <= maxOf(
-                    descriptionIndex,
-                    amountIndex
-                )
-            ) {
-                continue
-            }
-
-            if (
-                columns.any { isDescriptionHeader(it) } &&
-                columns.any { isAmountHeader(it) }
-            ) {
-                continue
-            }
-
-            val description =
-                columns.getOrNull(descriptionIndex)
-                    ?.trim()
-                    .orEmpty()
-
-            val amount = parseAmount(
-                columns.getOrNull(amountIndex).orEmpty()
-            )
-
-            if (description.isNotBlank() && amount != null) {
-                transactions.add(
-                    Transaction(description, amount)
-                )
-            }
+        val credit = columns.indexOfFirst {
+            isCreditHeader(it)
         }
 
+        val amount = columns.indexOfFirst {
+            isAmountHeader(it) &&
+                !isDebitHeader(it) &&
+                !isCreditHeader(it)
+        }
+
+        if (
+            desc >= 0 &&
+            (amount >= 0 || debit >= 0 || credit >= 0)
+        ) {
+            headerIndex = i
+            descriptionIndex = desc
+            amountIndex = amount
+            debitIndex = debit
+            creditIndex = credit
+            break
+        }
+    }
+
+    if (headerIndex < 0) {
         return ParsedStatement(
-            transactions,
-            "تم تحديد عناوين الأعمدة."
+            emptyList(),
+            "لم يتم العثور على عناوين تفاصيل العملية والمبالغ."
         )
     }
+
+    val transactions = mutableListOf<Transaction>()
+
+    for (i in headerIndex + 1 until lines.size) {
+        val columns = splitColumns(lines[i])
+
+        if (descriptionIndex !in columns.indices) {
+            continue
+        }
+
+        val description = columns[descriptionIndex].trim()
+
+        if (description.isBlank()) continue
+
+        val normalized = normalizeDescription(description)
+
+        if (
+            normalized.contains("سابق") ||
+            normalized.contains("اجمالي") ||
+            normalized.contains("رصيدحالي") ||
+            normalized.contains("عدالحركات")
+        ) {
+            continue
+        }
+
+        val amount: Double? =
+            if (amountIndex >= 0) {
+                parseAmount(
+                    columns.getOrNull(amountIndex).orEmpty()
+                )
+            } else {
+                val debitValue = if (debitIndex >= 0) {
+                    columns.getOrNull(debitIndex)
+                        ?.let { parseAmount(it) }
+                } else {
+                    null
+                }
+
+                val creditValue = if (creditIndex >= 0) {
+                    columns.getOrNull(creditIndex)
+                        ?.let { parseAmount(it) }
+                } else {
+                    null
+                }
+
+                if (debitValue == null && creditValue == null) {
+                    null
+                } else {
+                    maxOf(
+                        abs(debitValue ?: 0.0),
+                        abs(creditValue ?: 0.0)
+                    )
+                }
+            }
+
+        if (amount != null) {
+            transactions.add(
+                Transaction(description, amount)
+            )
+        }
+    }
+
+    return ParsedStatement(
+        transactions,
+        "تم استخراج العمليات من الكشف."
+    )
+}
 
     private fun normalizeDescription(text: String): String {
         return normalizeDigits(text)
