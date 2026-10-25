@@ -372,7 +372,7 @@ class MainActivity : Activity() {
             .replace("٫", ".")
             .replace("−", "-")
             .replace(" ", "")
-            .replace(Regex("""[^0-9,().+-]"""), "")
+            .filter { it.isDigit() || it in ",().+-" }
 
 
         if (s.isBlank() || s == "-" || s == "." || s == ",") {
