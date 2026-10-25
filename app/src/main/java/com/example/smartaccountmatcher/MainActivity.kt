@@ -312,18 +312,16 @@ class MainActivity : Activity() {
             }
     }
 
-    private fun cleanHeader(text: String): String {
-        return normalizeDigits(text)
-            .lowercase(Locale.ROOT)
-            .replace("أ", "ا")
-            .replace("إ", "ا")
-            .replace("آ", "ا")
-            .replace("ى", "ي")
-            .replace(
-                .replace(
-    Regex("[^a-zA-Z0-9ء-ي]"),
-    ""
-)
+    
+private fun cleanHeader(text: String): String {
+    return normalizeDigits(text)
+        .lowercase(Locale.ROOT)
+        .replace("أ", "ا")
+        .replace("إ", "ا")
+        .replace("آ", "ا")
+        .replace("ى", "ي")
+        .filter { it.isLetterOrDigit() }
+}
 
             .trim()
     }
