@@ -408,17 +408,18 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun normalizeDescription(text: String): String {
-        return normalizeDigits(text)
-            .lowercase(Locale.ROOT)
-            .replace("أ", "ا")
-            .replace("إ", "ا")
-            .replace("آ", "ا")
-            .replace("ى", "ي")
-            .replace("ة", "ه")
-            .replace(Regex("[^\\p{L}\\p{N}]"), "")
-            .trim()
-    }
+
+private fun normalizeDescription(text: String): String {
+    return normalizeDigits(text)
+        .lowercase(Locale.ROOT)
+        .replace("أ", "ا")
+        .replace("إ", "ا")
+        .replace("آ", "ا")
+        .replace("ى", "ي")
+        .replace("ة", "ه")
+        .filter { it.isLetterOrDigit() }
+        .trim()
+}
 
     private fun compareStatements() {
         if (firstText.isBlank() || secondText.isBlank()) {
