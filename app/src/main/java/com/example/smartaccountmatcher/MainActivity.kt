@@ -1,3 +1,4 @@
+
 package com.example.smartaccountmatcher
 
 import android.app.Activity
@@ -18,6 +19,7 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
 import java.util.Locale
+import kotlin.math.abs
 
 class MainActivity : Activity() {
 
@@ -30,6 +32,16 @@ class MainActivity : Activity() {
     private lateinit var firstStatus: TextView
     private lateinit var secondStatus: TextView
     private lateinit var results: TextView
+
+    data class Transaction(
+        val description: String,
+        val amount: Double
+    )
+
+    data class ParsedStatement(
+        val transactions: List<Transaction>,
+        val message: String
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,7 +57,6 @@ class MainActivity : Activity() {
         }
 
         val scroll = ScrollView(this)
-
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -59,7 +70,7 @@ class MainActivity : Activity() {
         })
 
         content.addView(TextView(this).apply {
-            text = "قراءة ومقارنة كشوفات الحساب PDF وExcel"
+            text = "مطابقة البيان والمبلغ مع اختلاف ترتيب الأعمدة"
             textSize = 16f
             gravity = Gravity.CENTER
             setTextColor(Color.DKGRAY)
@@ -79,13 +90,11 @@ class MainActivity : Activity() {
         content.addView(button("اختيار كشف الشركة الأولى") {
             chooseFile(pickFirst)
         })
-
         content.addView(firstStatus)
 
         content.addView(button("اختيار كشف الشركة الثانية") {
             chooseFile(pickSecond)
         })
-
         content.addView(secondStatus)
 
         content.addView(button("مطابقة الحسابات") {
@@ -99,10 +108,7 @@ class MainActivity : Activity() {
         content.addView(results)
 
         scroll.addView(content)
-        root.addView(scroll, LinearLayout.LayoutParams(
-            -1, 0, 1f
-        ))
-
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
     }
 
@@ -113,31 +119,24 @@ class MainActivity : Activity() {
         setPadding(8, 8, 8, 16)
     }
 
-    private fun button(
-        label: String,
-        action: () -> Unit
-    ) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 16f
-
-        setOnClickListener {
-            action()
+    private fun button(label: String, action: () -> Unit) =
+        Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 16f
+            setOnClickListener { action() }
+            layoutParams = LinearLayout.LayoutParams(
+                -1,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 8
+            }
         }
-
-        layoutParams = LinearLayout.LayoutParams(
-            -1,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            bottomMargin = 8
-        }
-    }
 
     private fun chooseFile(requestCode: Int) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-
             putExtra(
                 Intent.EXTRA_MIME_TYPES,
                 arrayOf(
@@ -147,7 +146,6 @@ class MainActivity : Activity() {
                 )
             )
         }
-
         startActivityForResult(intent, requestCode)
     }
 
@@ -159,43 +157,29 @@ class MainActivity : Activity() {
     ) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (resultCode != RESULT_OK || data?.data == null) {
-            return
-        }
+        if (resultCode != RESULT_OK || data?.data == null) return
 
         val uri = data.data!!
 
         try {
             val name = getDisplayName(uri)
+            val extracted = contentResolver.openInputStream(uri).use { input ->
+                requireNotNull(input) { "تعذر فتح الملف" }
 
-            val extracted = contentResolver
-                .openInputStream(uri)
-                .use { input ->
+                when {
+                    name.endsWith(".pdf", true) ||
+                        mime(uri) == "application/pdf" -> readPdf(input)
 
-                    requireNotNull(input) {
-                        "تعذر فتح الملف"
-                    }
+                    name.endsWith(".xls", true) ||
+                        name.endsWith(".xlsx", true) ||
+                        mime(uri).contains("spreadsheet") ||
+                        mime(uri).contains("excel") -> readExcel(input)
 
-                    when {
-                        name.endsWith(".pdf", true) ||
-                            mime(uri) == "application/pdf" -> {
-                            readPdf(input)
-                        }
-
-                        name.endsWith(".xls", true) ||
-                            name.endsWith(".xlsx", true) ||
-                            mime(uri).contains("spreadsheet") ||
-                            mime(uri).contains("excel") -> {
-                            readExcel(input)
-                        }
-
-                        else -> {
-                            throw IllegalArgumentException(
-                                "صيغة الملف غير مدعومة"
-                            )
-                        }
-                    }
+                    else -> throw IllegalArgumentException(
+                        "صيغة الملف غير مدعومة"
+                    )
                 }
+            }
 
             if (extracted.isBlank()) {
                 throw IllegalArgumentException(
@@ -205,12 +189,10 @@ class MainActivity : Activity() {
 
             if (requestCode == pickFirst) {
                 firstText = extracted
-                firstStatus.text =
-                    "الكشف الأول: $name — تمت القراءة"
+                firstStatus.text = "الكشف الأول: $name — تمت القراءة"
             } else if (requestCode == pickSecond) {
                 secondText = extracted
-                secondStatus.text =
-                    "الكشف الثاني: $name — تمت القراءة"
+                secondStatus.text = "الكشف الثاني: $name — تمت القراءة"
             }
 
             Toast.makeText(
@@ -238,7 +220,6 @@ class MainActivity : Activity() {
         val out = StringBuilder()
 
         WorkbookFactory.create(input).use { workbook ->
-
             for (sheet in workbook) {
                 out.append("الورقة: ")
                     .append(sheet.sheetName)
@@ -246,9 +227,11 @@ class MainActivity : Activity() {
 
                 for (row in sheet) {
                     val values = mutableListOf<String>()
+                    val last = row.lastCellNum.toInt()
 
-                    for (cell in row) {
-                        values.add(cell.toString().trim())
+                    for (i in 0 until last.coerceAtLeast(0)) {
+                        val cell = row.getCell(i)
+                        values.add(cell?.toString()?.trim().orEmpty())
                     }
 
                     out.append(values.joinToString(" | "))
@@ -260,24 +243,18 @@ class MainActivity : Activity() {
         return out.toString()
     }
 
-    private fun mime(uri: Uri): String {
-        return contentResolver.getType(uri) ?: ""
-    }
+    private fun mime(uri: Uri): String =
+        contentResolver.getType(uri) ?: ""
 
     private fun getDisplayName(uri: Uri): String {
         val cursor = contentResolver.query(
-            uri,
-            null,
-            null,
-            null,
-            null
+            uri, null, null, null, null
         )
 
         cursor?.use {
             val index = it.getColumnIndex(
                 android.provider.OpenableColumns.DISPLAY_NAME
             )
-
             if (index >= 0 && it.moveToFirst()) {
                 return it.getString(index) ?: "file"
             }
@@ -286,7 +263,6 @@ class MainActivity : Activity() {
         return uri.lastPathSegment ?: "file"
     }
 
-    // توحيد الأرقام العربية والهندية والإنجليزية
     private fun normalizeDigits(text: String): String {
         return text
             .replace(Regex("[٠-٩]")) {
@@ -297,173 +273,235 @@ class MainActivity : Activity() {
             }
     }
 
-    // توحيد شكل السطر لتقليل الاختلافات الناتجة عن التنسيق
-    private fun normalizeLine(line: String): String {
-        return normalizeDigits(line)
-            .replace('٫', '.')
-            .replace('٬', ',')
-            .replace('،', ',')
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun cleanHeader(text: String): String {
+        return normalizeDigits(text)
             .lowercase(Locale.ROOT)
+            .replace("أ", "ا")
+            .replace("إ", "ا")
+            .replace("آ", "ا")
+            .replace("ى", "ي")
+            .replace(Regex("[\\s\\p{Punct}،؛:：()\\[\\]{}]+"), "")
+            .trim()
     }
 
-    // استخراج السطور التي تحتوي على بيانات
-    private fun extractRows(text: String): List<String> {
-        return text
-            .split('\n', '\r')
+    private fun isDescriptionHeader(value: String): Boolean {
+        val h = cleanHeader(value)
+        return h in setOf(
+            "البيان", "بيان", "وصفالعملية", "وصفالحركة",
+            "تفاصيلالعملية", "تفاصيلالحركة", "التفاصيل",
+            "الشرح", "البيانات"
+        )
+    }
+
+    private fun isAmountHeader(value: String): Boolean {
+        val h = cleanHeader(value)
+        return h in setOf(
+            "المبلغ", "قيمة", "القيمة", "مبلغ",
+            "قيمةالعملية", "مبلغالعملية"
+        )
+    }
+
+    // يفصل الأعمدة التي بينها مسافات متعددة أو فواصل Excel.
+    private fun splitColumns(line: String): List<String> {
+        if (line.contains('|')) {
+            return line.split('|').map { it.trim() }
+        }
+
+        return line.trim()
+            .split(Regex("\\t+| {2,}"))
             .map { it.trim() }
-            .filter { it.length >= 2 }
+            .filter { it.isNotEmpty() }
+    }
+
+    private fun parseAmount(raw: String): Double? {
+        var s = normalizeDigits(raw)
+            .replace("٬", ",")
+            .replace("٫", ".")
+            .replace("−", "-")
+            .replace(" ", "")
+            .replace(Regex("[^0-9,().+-]"), "")
+
+        if (s.isBlank() || s == "-" || s == "." || s == ",") {
+            return null
+        }
+
+        val negativeParentheses = s.startsWith("(") && s.endsWith(")")
+        s = s.removePrefix("(").removeSuffix(")")
+
+        // عند وجود الفاصلتين، نعتبر الفاصلة الأخيرة عشرية فقط
+        // إذا كان بعدها خانة أو خانتان؛ وإلا فهي فاصل آلاف.
+        if (s.contains(',') && s.contains('.')) {
+            s = if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
+                s.replace(",", "")
+            } else {
+                s.replace(".", "").replace(",", ".")
+            }
+        } else if (s.contains(',')) {
+            val tail = s.substringAfterLast(',')
+            s = if (tail.length in 1..2) {
+                s.replace(",", ".")
+            } else {
+                s.replace(",", "")
+            }
+        }
+
+        val value = s.toDoubleOrNull() ?: return null
+        return if (negativeParentheses) -abs(value) else value
+    }
+
+    private fun parseStatement(text: String): ParsedStatement {
+        val lines = text.lines()
+        var headerIndex = -1
+        var descriptionIndex = -1
+        var amountIndex = -1
+        var headerColumns = emptyList<String>()
+
+        // البحث عن صف العناوين بدل الاعتماد على ترتيب ثابت.
+        for (i in lines.indices) {
+            val columns = splitColumns(lines[i])
+            val desc = columns.indexOfFirst { isDescriptionHeader(it) }
+            val amount = columns.indexOfFirst { isAmountHeader(it) }
+
+            if (desc >= 0 && amount >= 0 && desc != amount) {
+                headerIndex = i
+                descriptionIndex = desc
+                amountIndex = amount
+                headerColumns = columns
+                break
+            }
+        }
+
+        if (headerIndex < 0) {
+            return ParsedStatement(
+                emptyList(),
+                "لم أستطع تحديد عمودي البيان والمبلغ تلقائيًا. تأكد أن عناوين الأعمدة تظهر بوضوح في النص المستخرج."
+            )
+        }
+
+        val transactions = mutableListOf<Transaction>()
+
+        for (i in headerIndex + 1 until lines.size) {
+            val line = lines[i].trim()
+            if (line.isBlank()) continue
+
+            val columns = splitColumns(line)
+            if (columns.size <= maxOf(descriptionIndex, amountIndex)) continue
+
+            // تجاهل صف عناوين آخر أو صفوف فارغة.
+            if (columns.any { isDescriptionHeader(it) } &&
+                columns.any { isAmountHeader(it) }) continue
+
+            val description = columns.getOrNull(descriptionIndex)
+                ?.trim().orEmpty()
+            val amount = parseAmount(
+                columns.getOrNull(amountIndex).orEmpty()
+            )
+
+            if (description.isNotBlank() && amount != null) {
+                transactions.add(Transaction(description, amount))
+            }
+        }
+
+        return ParsedStatement(
+            transactions,
+            "تم التعرف على عمود البيان وعمود المبلغ."
+        )
+    }
+
+    private fun normalizeDescription(text: String): String {
+        return normalizeDigits(text)
+            .lowercase(Locale.ROOT)
+            .replace("أ", "ا")
+            .replace("إ", "ا")
+            .replace("آ", "ا")
+            .replace("ى", "ي")
+            .replace("ة", "ه")
+            .replace(Regex("[^\\p{L}\\p{N}]"), "")
+            .trim()
     }
 
     private fun compareStatements() {
         if (firstText.isBlank() || secondText.isBlank()) {
-            results.text =
-                "يجب اختيار الكشفين وقراءتهما أولاً."
+            results.text = "يجب اختيار الكشفين وقراءتهما أولاً."
             return
         }
 
-        val firstRows = extractRows(firstText)
-        val secondRows = extractRows(secondText)
+        val first = parseStatement(firstText)
+        val second = parseStatement(secondText)
 
-        if (firstRows.isEmpty() || secondRows.isEmpty()) {
-            results.text =
-                "لم يتم العثور على سطور قابلة للمقارنة."
+        if (first.transactions.isEmpty() ||
+            second.transactions.isEmpty()) {
+            results.text = buildString {
+                append("تعذر إجراء المطابقة.\n\n")
+                append("الكشف الأول: ")
+                    .append(first.message).append('\n')
+                append("الكشف الثاني: ")
+                    .append(second.message).append('\n\n')
+                append("قد يكون سبب المشكلة أن استخراج PDF لا يفصل الأعمدة ")
+                append("بالمسافات المتوقعة. لم تُعرض نتيجة تخمينية.")
+            }
             return
         }
 
-        // نحفظ عدد مرات ظهور كل سطر حتى لا تختفي الحركات المكررة
-        val firstMap = firstRows.groupBy {
-            normalizeLine(it)
+        // التجميع بحسب البيان بعد توحيد الاختلافات الكتابية البسيطة.
+        val firstGroups = first.transactions.groupBy {
+            normalizeDescription(it.description)
+        }
+        val secondGroups = second.transactions.groupBy {
+            normalizeDescription(it.description)
         }
 
-        val secondMap = secondRows.groupBy {
-            normalizeLine(it)
-        }
-
-        val firstKeys = firstMap.keys
-        val secondKeys = secondMap.keys
-
-        val commonKeys = firstKeys.intersect(secondKeys)
-
-        var matchedCount = 0
-
-        for (key in commonKeys) {
-            val firstCount = firstMap[key]?.size ?: 0
-            val secondCount = secondMap[key]?.size ?: 0
-
-            matchedCount += minOf(firstCount, secondCount)
-        }
-
-        val onlyFirst = mutableListOf<String>()
-        val onlySecond = mutableListOf<String>()
-
-        // السطور الموجودة في الكشف الأول أكثر من الكشف الثاني
-        for ((key, rows) in firstMap) {
-            val secondCount = secondMap[key]?.size ?: 0
-            val extraCount = rows.size - secondCount
-
-            if (extraCount > 0) {
-                repeat(extraCount) { index ->
-                    onlyFirst.add(rows[index])
-                }
-            }
-        }
-
-        // السطور الموجودة في الكشف الثاني أكثر من الكشف الأول
-        for ((key, rows) in secondMap) {
-            val firstCount = firstMap[key]?.size ?: 0
-            val extraCount = rows.size - firstCount
-
-            if (extraCount > 0) {
-                repeat(extraCount) { index ->
-                    onlySecond.add(rows[index])
-                }
-            }
-        }
-
-        // اكتشاف السطور المتكررة داخل كل كشف
-        val duplicatesFirst = firstMap.values
-            .filter { it.size > 1 }
-            .flatten()
-
-        val duplicatesSecond = secondMap.values
-            .filter { it.size > 1 }
-            .flatten()
-
+        val allKeys = (firstGroups.keys + secondGroups.keys).toSortedSet()
         val out = StringBuilder()
 
-        out.append("نتيجة مقارنة الكشوفات\n")
+        out.append("نتيجة مطابقة الكشوفات\n")
         out.append("====================\n\n")
+        out.append("عدد العمليات في الكشف الأول: ")
+            .append(first.transactions.size).append('\n')
+        out.append("عدد العمليات في الكشف الثاني: ")
+            .append(second.transactions.size).append("\n\n")
 
-        out.append("عدد السطور في الكشف الأول: ")
-            .append(firstRows.size)
-            .append('\n')
+        var differentCount = 0
 
-        out.append("عدد السطور في الكشف الثاني: ")
-            .append(secondRows.size)
-            .append('\n')
+        for (key in allKeys) {
+            val a = firstGroups[key].orEmpty()
+            val b = secondGroups[key].orEmpty()
 
-        out.append("عدد السطور المتطابقة: ")
-            .append(matchedCount)
-            .append("\n\n")
+            val sumA = a.sumOf { it.amount }
+            val sumB = b.sumOf { it.amount }
+            val name = a.firstOrNull()?.description
+                ?: b.firstOrNull()?.description ?: key
 
-        out.append("السطور الزائدة أو غير المتطابقة في الكشف الأول:\n")
+            val diff = sumA - sumB
+            val same = a.size == b.size && abs(diff) < 0.005
 
-        if (onlyFirst.isEmpty()) {
-            out.append("لا توجد سطور زائدة وفق المقارنة الحالية.\n")
-        } else {
-            onlyFirst.forEachIndexed { index, row ->
-                out.append(index + 1)
-                    .append(". ")
-                    .append(row)
-                    .append('\n')
-            }
+            if (!same) differentCount++
+
+            out.append("البيان: ").append(name).append('\n')
+            out.append("  الكشف الأول: ")
+                .append(a.size).append(" عملية، الإجمالي ")
+                .append(String.format(Locale.US, "%.2f", sumA))
+                .append('\n')
+            out.append("  الكشف الثاني: ")
+                .append(b.size).append(" عملية، الإجمالي ")
+                .append(String.format(Locale.US, "%.2f", sumB))
+                .append('\n')
+            out.append("  الفرق (الأول - الثاني): ")
+                .append(String.format(Locale.US, "%.2f", diff))
+                .append('\n')
+            out.append(
+                if (same) "  الحالة: متطابق في العدد والإجمالي\n\n"
+                else "  الحالة: يحتاج إلى مراجعة\n\n"
+            )
         }
 
-        out.append("\nالسطور الزائدة أو غير المتطابقة في الكشف الثاني:\n")
-
-        if (onlySecond.isEmpty()) {
-            out.append("لا توجد سطور زائدة وفق المقارنة الحالية.\n")
-        } else {
-            onlySecond.forEachIndexed { index, row ->
-                out.append(index + 1)
-                    .append(". ")
-                    .append(row)
-                    .append('\n')
-            }
-        }
-
-        out.append("\nالسطور المكررة في الكشف الأول:\n")
-
-        if (duplicatesFirst.isEmpty()) {
-            out.append("لم تُكتشف سطور مكررة.\n")
-        } else {
-            duplicatesFirst.forEach {
-                out.append("• ")
-                    .append(it)
-                    .append('\n')
-            }
-        }
-
-        out.append("\nالسطور المكررة في الكشف الثاني:\n")
-
-        if (duplicatesSecond.isEmpty()) {
-            out.append("لم تُكتشف سطور مكررة.\n")
-        } else {
-            duplicatesSecond.forEach {
-                out.append("• ")
-                    .append(it)
-                    .append('\n')
-            }
-        }
-
+        out.append("عدد مجموعات البيانات التي تحتاج إلى مراجعة: ")
+            .append(differentCount).append("\n\n")
         out.append(
-            "\nتنبيه مهم: هذه مقارنة أولية للسطور، " +
-                "وليست تدقيقاً محاسبياً نهائياً. " +
-                "قد تظهر اختلافات بسبب ترتيب الأعمدة أو " +
-                "تنسيق الكشوفات. يجب اختبار النتائج قبل " +
-                "اعتمادها محاسبياً."
+            "تنبيه: تُجمع هنا البيانات التي تتطابق بعد توحيد الكتابة البسيطة. " +
+                "هذا الإصدار لا يضمن مطابقة العبارات المتشابهة ذات الصياغة المختلفة، " +
+                "كما أن صحة النتائج تعتمد على دقة فصل أعمدة PDF. " +
+                "راجع الفروقات قبل اعتمادها محاسبيًا."
         )
 
         results.text = out.toString()
@@ -472,14 +510,8 @@ class MainActivity : Activity() {
     private fun resetAll() {
         firstText = ""
         secondText = ""
-
-        firstStatus.text =
-            "لم يتم اختيار الكشف الأول"
-
-        secondStatus.text =
-            "لم يتم اختيار الكشف الثاني"
-
-        results.text =
-            "اختر كشفين ثم اضغط مطابقة الحسابات."
+        firstStatus.text = "لم يتم اختيار الكشف الأول"
+        secondStatus.text = "لم يتم اختيار الكشف الثاني"
+        results.text = "اختر كشفين ثم اضغط مطابقة الحسابات."
     }
 }
